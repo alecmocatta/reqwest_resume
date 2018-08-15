@@ -1,0 +1,31 @@
+[package]
+name = "reqwest_resume"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Alec Mocatta <alec@mocatta.net>"]
+categories = ["development-tools","encoding","rust-patterns","network-programming"]
+keywords = ["trait-object","serialization","serde","distributed"]
+description = """
+Wrapper that uses the `Range` HTTP header to resume get requests.
+
+It's a thin wrapper around `reqwest`. It's a work in progress – wrapping functionality is copied across on an as-needed basis. Feel free to open a PR/issue if you need something.
+"""
+repository = "https://github.com/alecmocatta/reqwest_resume"
+homepage = "https://github.com/alecmocatta/reqwest_resume"
+documentation = "https://docs.rs/reqwest_resume/0.1.0"
+readme = "README.md"
+
+[badges]
+appveyor = { repository = "alecmocatta/reqwest_resume" }
+circle-ci = { repository = "alecmocatta/reqwest_resume" }
+#gitlab = { repository = "alecmocatta/reqwest_resume" }
+travis-ci = { repository = "alecmocatta/reqwest_resume" }
+
+maintenance = { status = "actively-developed" }
+
+[dependencies]
+reqwest = "0.8"
+log = "0.4"
+
+[dev-dependencies]
+flate2 = "1.0"
