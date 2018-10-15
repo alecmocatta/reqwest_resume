@@ -33,9 +33,9 @@
 	unused_import_braces,
 	unused_qualifications,
 	unused_results,
+	clippy::pedantic
 )] // from https://github.com/rust-unofficial/patterns/blob/master/anti_patterns/deny-warnings.md
-#![cfg_attr(feature = "cargo-clippy", warn(clippy_pedantic))]
-#![cfg_attr(feature = "cargo-clippy", allow(new_without_default))]
+#![allow(clippy::new_without_default, clippy::stutter)]
 
 #[cfg(test)]
 extern crate flate2;
@@ -174,7 +174,8 @@ mod test {
 		// Requests to large files on S3 regularly time out or close when made from slower connections. This test is fairly meaningless from fast connections. TODO
 		let body = reqwest::get(
 			"http://commoncrawl.s3.amazonaws.com/crawl-data/CC-MAIN-2018-30/warc.paths.gz",
-		).unwrap();
+		)
+		.unwrap();
 		let body = flate2::read::MultiGzDecoder::new(body); // Content-Encoding isn't set, so decode manually
 		let handles = BufReader::new(body)
 			.lines()
@@ -189,7 +190,8 @@ mod test {
 					let n = io::copy(&mut body, &mut io::sink()).unwrap();
 					println!("{}", n);
 				})
-			}).collect::<Vec<_>>();
+			})
+			.collect::<Vec<_>>();
 		for handle in handles {
 			handle.join().unwrap();
 		}
