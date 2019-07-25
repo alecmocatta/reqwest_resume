@@ -24,7 +24,7 @@ travis-ci = { repository = "alecmocatta/reqwest_resume" }
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-reqwest = "0.8"
+reqwest = "0.9"
 log = "0.4"
 
 [dev-dependencies]
