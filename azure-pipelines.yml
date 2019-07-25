@@ -1,31 +1,124 @@
 trigger: ["master"]
 pr: ["master"]
 
-resources:
-  repositories:
-    - repository: templates
-      type: github
-      name: alecmocatta/azure-pipeline-templates
-      endpoint: alecmocatta
 
-jobs:
-- template: rust.yml@templates
-  parameters:
-    default:
-      rust_toolchain: stable nightly
-      rust_lint_toolchain: nightly-2019-07-19
-      rust_flags: ''
-      rust_features: ''
-      rust_target_check: ''
-      rust_target_build: ''
-      rust_target_run: ''
-    matrix:
-      windows:
-        imageName: 'vs2017-win2016'
-        rust_target_run: 'x86_64-pc-windows-msvc i686-pc-windows-msvc' # currently broken building crate-type=lib: x86_64-pc-windows-gnu i686-pc-windows-gnu
-      mac:
-        imageName: 'macos-10.13'
-        rust_target_run: 'x86_64-apple-darwin i686-apple-darwin'
-      linux:
-        imageName: 'ubuntu-16.04'
-        rust_target_run: 'x86_64-unknown-linux-gnu i686-unknown-linux-gnu' # failing due to openssl not being built with musl-gcc; vendoring would solve this but slows ci: x86_64-unknown-linux-musl i686-unknown-linux-musl
+variables:
+  rust_toolchain: stable nightly
+  rust_lint_toolchain: nightly-2019-07-19
+  rust_flags: ''
+  rust_features: ''
+  rust_target_check: ''
+  rust_target_build: ''
+  rust_target_run: ''
+
+strategy:
+  matrix:
+    linux:
+      imageName: 'ubuntu-16.04'
+      rust_target_run: 'i686-unknown-linux-gnu' # failing due to openssl not being built with musl-gcc; vendoring would solve this but slows ci: x86_64-unknown-linux-musl i686-unknown-linux-musl
+
+
+pool:
+  vmImage: $(imageName)
+
+# Inspired by https://github.com/tokio-rs/tokio/blob/master/ci/azure-install-rust.yml
+steps:
+- checkout: self
+  persistCredentials: true
+
+- script: |
+    curl -sSf -o rustup-init.exe https://win.rustup.rs
+    rustup-init.exe -y --default-toolchain none
+    echo "##vso[task.setvariable variable=PATH;]%PATH%;%USERPROFILE%\.cargo\bin"
+  condition: eq(variables['Agent.OS'], 'Windows_NT')
+  displayName: 'Install Rust (Windows)'
+- bash: |
+    set -o errexit; set -o pipefail; set -o nounset; set -o xtrace;
+    curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain none
+    echo "##vso[task.setvariable variable=PATH;]$PATH:$HOME/.cargo/bin"
+  condition: eq(variables['Agent.OS'], 'Darwin')
+  displayName: 'Install Rust (Darwin)'
+- bash: |
+    set -o errexit; set -o pipefail; set -o nounset; set -o xtrace;
+    curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain none
+    echo "##vso[task.setvariable variable=PATH;]$PATH:$HOME/.cargo/bin"
+    sudo dpkg --add-architecture i386
+    sudo apt-get update
+    sudo apt-get install -y gcc-multilib libssl-dev:i386 musl-tools
+  condition: eq(variables['Agent.OS'], 'Linux')
+  displayName: 'Install Rust (Linux)'
+- bash: |
+    set -o errexit; set -o pipefail; set -o nounset; set -o xtrace;
+    rustup toolchain install $RUST_LINT_TOOLCHAIN
+    rustup component add rustfmt --toolchain $RUST_LINT_TOOLCHAIN
+  displayName: Install Rust lint
+- bash: |
+    set -o errexit; set -o pipefail; set -o nounset; set -o xtrace;
+    cargo +$RUST_LINT_TOOLCHAIN fmt -- --check || (
+      git reset --hard HEAD^2
+      cargo +$RUST_LINT_TOOLCHAIN fmt
+      git config user.email tidy.bot@example.com
+      git config user.name "Tidy Bot"
+      git add -A
+      git commit -m "Automatic formatting with rustfmt"
+      git -c http.extraheader="$(git config --get "http.$BUILD_REPOSITORY_URI.extraheader")" push --verbose "$SYSTEM_PULLREQUEST_SOURCEREPOSITORYURI" "HEAD:$SYSTEM_PULLREQUEST_SOURCEBRANCH"
+      false
+    )
+  condition: eq(variables['Build.Reason'], 'PullRequest')
+  displayName: Check & fix formatting
+- bash: |
+    set -o errexit; set -o pipefail; set -o nounset; set -o xtrace;
+    cargo +$RUST_LINT_TOOLCHAIN fmt -- --check
+  condition: ne(variables['Build.Reason'], 'PullRequest')
+  displayName: Check formatting
+- bash: |
+    set -o errexit; set -o pipefail; set -o nounset; set -o xtrace;
+    rustup component add clippy --toolchain $RUST_LINT_TOOLCHAIN
+    for TARGET in $RUST_TARGET_CHECK $RUST_TARGET_BUILD $RUST_TARGET_RUN; do [ "$TARGET" = $(rustup target list --toolchain $RUST_LINT_TOOLCHAIN | grep default | grep -o -e '^[^ ]\+') ] || rustup target add --toolchain $RUST_LINT_TOOLCHAIN "$TARGET"; done
+    for TOOLCHAIN in $RUST_TOOLCHAIN; do (
+      if [ "$TOOLCHAIN" != "$RUST_LINT_TOOLCHAIN" ]; then
+        rustup toolchain install $TOOLCHAIN
+        for TARGET in $RUST_TARGET_CHECK $RUST_TARGET_BUILD $RUST_TARGET_RUN; do [ "$TARGET" = $(rustup target list --toolchain $TOOLCHAIN | grep default | grep -o -e '^[^ ]\+') ] || rustup target add --toolchain $TOOLCHAIN "$TARGET"; done
+      fi
+      rustc +$TOOLCHAIN -Vv
+      cargo +$TOOLCHAIN -V
+    ); done
+  displayName: Install Rust matrix
+# - bash: |
+#     set -o errexit; set -o pipefail; set -o nounset; set -o xtrace;
+#     export PKG_CONFIG_ALLOW_CROSS=1
+#     for TOOLCHAIN in $RUST_TOOLCHAIN; do (
+#       export TOOLCHAIN
+#       OLD_IFS=$IFS IFS=";" RUST_FLAGS="$RUST_FLAGS;"; for RUSTFLAGS in $RUST_FLAGS; do ( IFS=$OLD_IFS
+#         export RUSTFLAGS
+#         OLD_IFS=$IFS IFS=";" RUST_FEATURES="$RUST_FEATURES;"; for FEATURES in $RUST_FEATURES; do ( IFS=$OLD_IFS
+#           [ "$FEATURES" = "all" ] && FEATURES="" ALL_FEATURES="--all-features" || ALL_FEATURES=""
+#           export FEATURES
+#           export ALL_FEATURES
+#           for TARGET in $RUST_TARGET_CHECK $RUST_TARGET_BUILD $RUST_TARGET_RUN; do (
+#             cargo +$RUST_LINT_TOOLCHAIN clippy --target "$TARGET" --all-targets --no-default-features --features "$FEATURES" $ALL_FEATURES -- -D warnings
+#           ); done
+#           for TARGET in $RUST_TARGET_BUILD $RUST_TARGET_RUN; do (
+#             cargo +$TOOLCHAIN build --verbose --target "$TARGET" --all-targets --no-default-features --features "$FEATURES" $ALL_FEATURES
+#             case "${TARGET%%-*}" in i386|i686|x86_64) RUSTFLAGS="$RUSTFLAGS -C target-cpu=native";; esac
+#             cargo +$TOOLCHAIN build --verbose --target "$TARGET" --all-targets --no-default-features --features "$FEATURES" $ALL_FEATURES --release
+#           ); done
+#           for TARGET in $RUST_TARGET_RUN; do (
+#             RUST_BACKTRACE=full cargo +$TOOLCHAIN test --target "$TARGET" --no-default-features --features "$FEATURES" $ALL_FEATURES
+#             RUSTFLAGS="$RUSTFLAGS -C target-cpu=native" RUST_BACKTRACE=full cargo +$TOOLCHAIN test --target "$TARGET" --no-default-features --features "$FEATURES" $ALL_FEATURES --release
+#             RUSTFLAGS="$RUSTFLAGS -C target-cpu=native" RUST_BACKTRACE=full cargo +$TOOLCHAIN bench --target "$TARGET" --no-default-features --features "$FEATURES" $ALL_FEATURES
+#             [ ! -d examples ] || for example in examples/*; do example=${example##*/}; (
+#               RUST_BACKTRACE=full cargo +$TOOLCHAIN run --target "$TARGET" --example ${example%.*} --no-default-features --features "$FEATURES" $ALL_FEATURES
+#               RUSTFLAGS="$RUSTFLAGS -C target-cpu=native" RUST_BACKTRACE=full cargo +$TOOLCHAIN run --target "$TARGET" --example ${example%.*} --no-default-features --features "$FEATURES" $ALL_FEATURES --release
+#             ); done
+#           ); done
+#         ); done; IFS=$OLD_IFS
+#       ); done; IFS=$OLD_IFS
+#     ); done
+#   displayName: Build & Run
+- bash: |
+    set -o errexit; set -o pipefail; set -o nounset; set -o xtrace;
+    for TARGET in $RUST_TARGET_CHECK $RUST_TARGET_BUILD $RUST_TARGET_RUN; do
+      cargo +$RUST_LINT_TOOLCHAIN doc --no-deps --target "$TARGET" --all-features --release --verbose
+    done
+  displayName: Check documentation
