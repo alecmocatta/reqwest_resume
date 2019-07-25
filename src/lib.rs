@@ -23,26 +23,20 @@
 //! ```
 
 #![doc(html_root_url = "https://docs.rs/reqwest_resume/0.1.0")]
-#![feature(nll)]
 #![warn(
 	missing_copy_implementations,
 	missing_debug_implementations,
 	missing_docs,
+	trivial_casts,
 	trivial_numeric_casts,
-	unused_extern_crates,
 	unused_import_braces,
 	unused_qualifications,
 	unused_results,
 	clippy::pedantic
 )] // from https://github.com/rust-unofficial/patterns/blob/master/anti_patterns/deny-warnings.md
-#![allow(clippy::new_without_default, clippy::stutter)]
+#![allow(clippy::new_without_default)]
 
-#[cfg(test)]
-extern crate flate2;
-extern crate reqwest;
-#[macro_use]
-extern crate log;
-
+use log::trace;
 use std::io;
 
 /// Extension to [`reqwest::Client`] that provides a method to convert it
@@ -66,7 +60,7 @@ impl Client {
 	///
 	/// See [`reqwest::Client::new()`].
 	pub fn new() -> Self {
-		Client(reqwest::Client::new())
+		Self(reqwest::Client::new())
 	}
 	/// Convenience method to make a `GET` request to a URL.
 	///
