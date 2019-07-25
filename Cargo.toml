@@ -23,6 +23,7 @@ maintenance = { status = "actively-developed" }
 [dependencies]
 reqwest = "0.9"
 log = "0.4"
+hyperx = "0.15"
 
 [dev-dependencies]
 flate2 = "1.0"

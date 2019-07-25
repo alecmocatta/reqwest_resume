@@ -67,7 +67,7 @@ impl Client {
 	/// See [`reqwest::Client::get()`].
 	pub fn get(&self, url: reqwest::Url) -> RequestBuilder {
 		// <U: reqwest::IntoUrl>
-		RequestBuilder(self.0.clone(), reqwest::Method::Get, url)
+		RequestBuilder(self.0.clone(), reqwest::Method::GET, url)
 	}
 }
 
@@ -81,7 +81,7 @@ impl RequestBuilder {
 	///
 	/// See [`reqwest::RequestBuilder::send()`].
 	pub fn send(&mut self) -> reqwest::Result<Response> {
-		let mut builder = self.0.request(self.1.clone(), self.2.clone());
+		let builder = self.0.request(self.1.clone(), self.2.clone());
 		Ok(Response(
 			self.0.clone(),
 			self.1.clone(),
@@ -113,22 +113,23 @@ impl io::Read for Response {
 					break Ok(n);
 				}
 				Err(err) => {
+					let headers = hyperx::header::Headers::from(self.3.headers());
 					let accept_byte_ranges =
-						if let Some(&reqwest::header::AcceptRanges(ref ranges)) =
-							self.3.headers().get()
-						{
+						if let Some(&hyperx::header::AcceptRanges(ref ranges)) = headers.get() {
 							ranges
 								.iter()
-								.any(|u| *u == reqwest::header::RangeUnit::Bytes)
+								.any(|u| *u == hyperx::header::RangeUnit::Bytes)
 						} else {
 							false
 						};
 					if accept_byte_ranges {
 						trace!("resuming HTTP request due to error {:?}", err);
-						let mut builder = self.0.request(self.1.clone(), self.2.clone());
-						let _ = builder.header(reqwest::header::Range::Bytes(vec![
-							reqwest::header::ByteRangeSpec::AllFrom(self.4),
+						let builder = self.0.request(self.1.clone(), self.2.clone());
+						let mut headers = hyperx::header::Headers::new();
+						headers.set(hyperx::header::Range::Bytes(vec![
+							hyperx::header::ByteRangeSpec::AllFrom(self.4),
 						]));
+						let builder = builder.headers(headers.into());
 						// https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests
 						// https://github.com/sdroege/gst-plugin-rs/blob/dcb36832329fde0113a41b80ebdb5efd28ead68d/gst-plugin-http/src/httpsrc.rs
 						if let Ok(response) = builder.send() {
