@@ -21,7 +21,7 @@ azure-devops = { project = "alecmocatta/reqwest_resume", pipeline = "tests" }
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-reqwest = "0.8"
+reqwest = "0.9"
 log = "0.4"
 
 [dev-dependencies]
