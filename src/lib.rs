@@ -22,7 +22,7 @@
 //! }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/reqwest_resume/0.1.0")]
+#![doc(html_root_url = "https://docs.rs/reqwest_resume/0.2.0")]
 #![warn(
 	missing_copy_implementations,
 	missing_debug_implementations,
