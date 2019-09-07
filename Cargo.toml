@@ -1,10 +1,10 @@
 [package]
 name = "reqwest_resume"
-version = "0.2.0"
+version = "0.2.1"
 license = "MIT OR Apache-2.0"
 authors = ["Alec Mocatta <alec@mocatta.net>"]
 categories = ["development-tools","encoding","rust-patterns","network-programming"]
-keywords = ["trait-object","serialization","serde","distributed"]
+keywords = ["http", "request", "client", "retry"]
 description = """
 Wrapper that uses the `Range` HTTP header to resume get requests.
 
@@ -12,13 +12,13 @@ It's a thin wrapper around `reqwest`. It's a work in progress – wrapping funct
 """
 repository = "https://github.com/alecmocatta/reqwest_resume"
 homepage = "https://github.com/alecmocatta/reqwest_resume"
-documentation = "https://docs.rs/reqwest_resume/0.2.0"
+documentation = "https://docs.rs/reqwest_resume/0.2.1"
 readme = "README.md"
 edition = "2018"
 
 [badges]
 azure-devops = { project = "alecmocatta/reqwest_resume", pipeline = "tests" }
-maintenance = { status = "actively-developed" }
+maintenance = { status = "passively-maintained" }
 
 [dependencies]
 reqwest = "0.9"
