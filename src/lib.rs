@@ -209,8 +209,7 @@ pub fn get(url: reqwest::Url) -> impl Future<Output = reqwest::Result<Response>>
 #[cfg(test)]
 mod test {
 	use async_compression::futures::bufread::GzipDecoder; // TODO: use stream or https://github.com/alexcrichton/flate2-rs/pull/214
-	use futures::{future::join_all, AsyncBufReadExt, StreamExt, TryStreamExt};
-	use futures::io::BufReader;
+	use futures::{future::join_all, io::BufReader, AsyncBufReadExt, StreamExt, TryStreamExt};
 	use std::io;
 
 	#[tokio::test]
