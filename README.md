@@ -2,9 +2,9 @@
 
 [![Crates.io](https://img.shields.io/crates/v/reqwest_resume.svg?maxAge=86400)](https://crates.io/crates/reqwest_resume)
 [![MIT / Apache 2.0 licensed](https://img.shields.io/crates/l/reqwest_resume.svg?maxAge=2592000)](#License)
-[![Build Status](https://dev.azure.com/alecmocatta/reqwest_resume/_apis/build/status/tests?branchName=master)](https://dev.azure.com/alecmocatta/reqwest_resume/_build/latest?branchName=master)
+[![Build Status](https://dev.azure.com/alecmocatta/reqwest_resume/_apis/build/status/tests?branchName=master)](https://dev.azure.com/alecmocatta/reqwest_resume/_build?definitionId=15)
 
-[Docs](https://docs.rs/reqwest_resume/0.2.1)
+<a href="https://docs.rs/reqwest_resume/0.2.1">📖 Docs</a> | <a href="https://constellation.zulipchat.com/#narrow/stream/213236-subprojects">💬 Chat</a>
 
 Wrapper that uses the `Range` HTTP header to resume get requests.
 
@@ -13,18 +13,26 @@ It's a thin wrapper around [`reqwest`](https://github.com/seanmonstar/reqwest). 
 ## Example
 
 ```rust
-extern crate reqwest_resume;
-extern crate flate2;
+use async_compression::futures::bufread::GzipDecoder;
+use futures::{io::BufReader, AsyncBufReadExt, StreamExt, TryStreamExt};
+use std::io;
 
-use std::io::{BufRead, BufReader};
+#[tokio::main]
+async fn main() {
+    let url = "http://commoncrawl.s3.amazonaws.com/crawl-data/CC-MAIN-2018-30/warc.paths.gz";
+    let body = reqwest_resume::get(url.parse().unwrap()).await.unwrap();
+    // Content-Encoding isn't set, so decode manually
+    let body = body
+        .bytes_stream()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+    let body = futures::io::BufReader::new(body.into_async_read());
+    let mut body = GzipDecoder::new(body); // Content-Encoding isn't set, so decode manually
+    body.multiple_members(true);
 
-let url = "http://commoncrawl.s3.amazonaws.com/crawl-data/CC-MAIN-2018-30/warc.paths.gz";
-let body = reqwest_resume::get(url.parse().unwrap()).unwrap();
-// Content-Encoding isn't set, so decode manually
-let body = flate2::read::MultiGzDecoder::new(body);
-
-for line in BufReader::new(body).lines() {
-	println!("{}", line.unwrap());
+    let mut lines = BufReader::new(body).lines();
+    while let Some(line) = lines.next().await {
+        println!("{}", line.unwrap());
+    }
 }
 ```
 

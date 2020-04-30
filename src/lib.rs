@@ -1,25 +1,35 @@
 //! Wrapper that uses the `Range` HTTP header to resume get requests.
 //!
-//! **[Crates.io](https://crates.io/crates/reqwest_resume) │ [Repo](https://github.com/alecmocatta/reqwest_resume)**
+//! <p style="font-family: 'Fira Sans',sans-serif;padding:0.3em 0"><strong>
+//! <a href="https://crates.io/crates/reqwest_resume">📦&nbsp;&nbsp;Crates.io</a>&nbsp;&nbsp;│&nbsp;&nbsp;<a href="https://github.com/alecmocatta/reqwest_resume">📑&nbsp;&nbsp;GitHub</a>&nbsp;&nbsp;│&nbsp;&nbsp;<a href="https://constellation.zulipchat.com/#narrow/stream/213236-subprojects">💬&nbsp;&nbsp;Chat</a>
+//! </strong></p>
 //!
 //! It's a thin wrapper around [`reqwest`](https://github.com/seanmonstar/reqwest). It's a work in progress – wrapping functionality is copied across on an as-needed basis. Feel free to open a PR/issue if you need something.
 //!
 //! # Example
 //!
 //! ```
-//! extern crate reqwest_resume;
-//! extern crate flate2;
+//! use async_compression::futures::bufread::GzipDecoder;
+//! use futures::{io::BufReader, AsyncBufReadExt, StreamExt, TryStreamExt};
+//! use std::io;
 //!
-//! use std::io::{BufRead, BufReader};
-//!
+//! # #[tokio::main]
+//! # async fn main() {
 //! let url = "http://commoncrawl.s3.amazonaws.com/crawl-data/CC-MAIN-2018-30/warc.paths.gz";
-//! let body = reqwest_resume::get(url.parse().unwrap()).unwrap();
+//! let body = reqwest_resume::get(url.parse().unwrap()).await.unwrap();
 //! // Content-Encoding isn't set, so decode manually
-//! let body = flate2::read::MultiGzDecoder::new(body);
+//! let body = body
+//!     .bytes_stream()
+//!     .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+//! let body = futures::io::BufReader::new(body.into_async_read());
+//! let mut body = GzipDecoder::new(body); // Content-Encoding isn't set, so decode manually
+//! body.multiple_members(true);
 //!
-//! for line in BufReader::new(body).lines() {
-//! 	println!("{}", line.unwrap());
+//! let mut lines = BufReader::new(body).lines();
+//! while let Some(line) = lines.next().await {
+//!     println!("{}", line.unwrap());
 //! }
+//! # }
 //! ```
 
 #![doc(html_root_url = "https://docs.rs/reqwest_resume/0.2.1")]
@@ -34,10 +44,18 @@
 	unused_results,
 	clippy::pedantic
 )] // from https://github.com/rust-unofficial/patterns/blob/master/anti_patterns/deny-warnings.md
-#![allow(clippy::new_without_default)]
+#![allow(
+	clippy::new_without_default,
+	clippy::must_use_candidate,
+	clippy::missing_errors_doc
+)]
 
+use bytes::Bytes;
+use futures::{ready, Stream, TryFutureExt};
 use log::trace;
-use std::io;
+use std::{
+	future::Future, pin::Pin, task::{Context, Poll}
+};
 
 /// Extension to [`reqwest::Client`] that provides a method to convert it
 pub trait ClientExt {
@@ -80,15 +98,29 @@ impl RequestBuilder {
 	/// Constructs the Request and sends it the target URL, returning a Response.
 	///
 	/// See [`reqwest::RequestBuilder::send()`].
-	pub fn send(&mut self) -> reqwest::Result<Response> {
-		let builder = self.0.request(self.1.clone(), self.2.clone());
-		Ok(Response(
-			self.0.clone(),
-			self.1.clone(),
-			self.2.clone(),
-			builder.send()?,
-			0,
-		))
+	pub fn send(&mut self) -> impl Future<Output = reqwest::Result<Response>> {
+		let (client, method, url) = (self.0.clone(), self.1.clone(), self.2.clone());
+		let builder = self.0.request(method.clone(), url.clone());
+		async move {
+			let response = builder.send().await?;
+			let headers = hyperx::Headers::from(response.headers());
+			let accept_byte_ranges =
+				if let Some(&hyperx::header::AcceptRanges(ref ranges)) = headers.get() {
+					ranges
+						.iter()
+						.any(|u| *u == hyperx::header::RangeUnit::Bytes)
+				} else {
+					false
+				};
+			Ok(Response {
+				client,
+				method,
+				url,
+				response,
+				accept_byte_ranges,
+				pos: 0,
+			})
+		}
 	}
 }
 
@@ -96,52 +128,71 @@ impl RequestBuilder {
 ///
 /// See [`reqwest::Response`].
 #[derive(Debug)]
-pub struct Response(
-	reqwest::Client,
-	reqwest::Method,
-	reqwest::Url,
-	reqwest::Response,
-	u64,
-);
-impl Response {}
-impl io::Read for Response {
-	fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+pub struct Response {
+	client: reqwest::Client,
+	method: reqwest::Method,
+	url: reqwest::Url,
+	response: reqwest::Response,
+	accept_byte_ranges: bool,
+	pos: u64,
+}
+impl Response {
+	/// Convert the response into a `Stream` of `Bytes` from the body.
+	///
+	/// See [`reqwest::Response::bytes_stream()`].
+	pub fn bytes_stream(self) -> impl Stream<Item = reqwest::Result<Bytes>> {
+		Decoder {
+			client: self.client,
+			method: self.method,
+			url: self.url,
+			decoder: Box::pin(self.response.bytes_stream()),
+			accept_byte_ranges: self.accept_byte_ranges,
+			pos: self.pos,
+		}
+	}
+}
+
+struct Decoder {
+	client: reqwest::Client,
+	method: reqwest::Method,
+	url: reqwest::Url,
+	decoder: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send + Unpin>>,
+	accept_byte_ranges: bool,
+	pos: u64,
+}
+impl Stream for Decoder {
+	type Item = reqwest::Result<Bytes>;
+
+	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
 		loop {
-			match self.3.read(buf) {
-				Ok(n) => {
-					self.4 += n as u64;
-					break Ok(n);
-				}
-				Err(err) => {
-					let headers = hyperx::header::Headers::from(self.3.headers());
-					let accept_byte_ranges =
-						if let Some(&hyperx::header::AcceptRanges(ref ranges)) = headers.get() {
-							ranges
-								.iter()
-								.any(|u| *u == hyperx::header::RangeUnit::Bytes)
-						} else {
-							false
-						};
-					if accept_byte_ranges {
-						trace!("resuming HTTP request due to error {:?}", err);
-						let builder = self.0.request(self.1.clone(), self.2.clone());
-						let mut headers = hyperx::header::Headers::new();
-						headers.set(hyperx::header::Range::Bytes(vec![
-							hyperx::header::ByteRangeSpec::AllFrom(self.4),
-						]));
-						let builder = builder.headers(headers.into());
-						// https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests
-						// https://github.com/sdroege/gst-plugin-rs/blob/dcb36832329fde0113a41b80ebdb5efd28ead68d/gst-plugin-http/src/httpsrc.rs
-						if let Ok(response) = builder.send() {
-							self.3 = response;
-							continue;
-						}
-					} else {
+			match ready!(self.decoder.as_mut().poll_next(cx)) {
+				Some(Err(err)) => {
+					if !self.accept_byte_ranges {
 						// TODO: we could try, for those servers that don't output Accept-Ranges but work anyway
 						trace!("couldn't resume HTTP request with error {:?}", err);
+						break Poll::Ready(Some(Err(err)));
 					}
-					break Err(err);
+					println!("resuming HTTP request due to error {:?}", err);
+					let builder = self.client.request(self.method.clone(), self.url.clone());
+					let mut headers = hyperx::Headers::new();
+					headers.set(hyperx::header::Range::Bytes(vec![
+						hyperx::header::ByteRangeSpec::AllFrom(self.pos),
+					]));
+					let builder = builder.headers(headers.into());
+					// https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests
+					// https://github.com/sdroege/gst-plugin-rs/blob/dcb36832329fde0113a41b80ebdb5efd28ead68d/gst-plugin-http/src/httpsrc.rs
+					self.decoder = Box::pin(
+						builder
+							.send()
+							.map_ok(reqwest::Response::bytes_stream)
+							.try_flatten_stream(),
+					);
 				}
+				Some(Ok(n)) => {
+					self.pos += n.len() as u64;
+					break Poll::Ready(Some(Ok(n)));
+				}
+				None => break Poll::Ready(None),
 			}
 		}
 	}
@@ -150,45 +201,59 @@ impl io::Read for Response {
 /// Shortcut method to quickly make a GET request.
 ///
 /// See [`reqwest::get`].
-pub fn get(url: reqwest::Url) -> reqwest::Result<Response> {
+pub fn get(url: reqwest::Url) -> impl Future<Output = reqwest::Result<Response>> {
 	// <T: IntoUrl>
 	Client::new().get(url).send()
 }
 
 #[cfg(test)]
 mod test {
-	use flate2;
-	use reqwest;
-	use std::{
-		io::{self, BufRead, BufReader}, thread
-	};
+	use async_compression::futures::bufread::GzipDecoder; // TODO: use stream or https://github.com/alexcrichton/flate2-rs/pull/214
+	use futures::{future::join_all, AsyncBufReadExt, StreamExt, TryStreamExt};
+	use futures::io::BufReader;
+	use std::io;
 
-	#[test]
+	#[tokio::test]
 	#[ignore] // painful on CI. TODO
-	fn dl_s3() {
+	async fn dl_s3() {
 		// Requests to large files on S3 regularly time out or close when made from slower connections. This test is fairly meaningless from fast connections. TODO
 		let body = reqwest::get(
 			"http://commoncrawl.s3.amazonaws.com/crawl-data/CC-MAIN-2018-30/warc.paths.gz",
 		)
+		.await
 		.unwrap();
-		let body = flate2::read::MultiGzDecoder::new(body); // Content-Encoding isn't set, so decode manually
+		let body = body
+			.bytes_stream()
+			.map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+		let body = BufReader::new(body.into_async_read());
+		let mut body = GzipDecoder::new(body); // Content-Encoding isn't set, so decode manually
+		body.multiple_members(true);
 		let handles = BufReader::new(body)
 			.lines()
 			.map(|url| format!("http://commoncrawl.s3.amazonaws.com/{}", url.unwrap()))
 			.take(10)
 			.map(|url| {
-				println!("{}", url);
-				thread::spawn(move || {
-					// let body = reqwest::ClientBuilder::new().timeout(time::Duration::new(120,0)).build().unwrap().resumable().get(url.parse().unwrap()).send().unwrap();
-					let body = super::get(url.parse().unwrap()).unwrap();
-					let mut body = flate2::read::MultiGzDecoder::new(body);
-					let n = io::copy(&mut body, &mut io::sink()).unwrap();
+				tokio::spawn(async move {
+					println!("{}", url);
+					let body = super::get(url.parse().unwrap()).await.unwrap();
+					let body = body
+						.bytes_stream()
+						.map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+					let body = BufReader::new(body.into_async_read());
+					let mut body = GzipDecoder::new(body); // Content-Encoding isn't set, so decode manually
+					body.multiple_members(true);
+					let n = futures::io::copy(&mut body, &mut futures::io::sink())
+						.await
+						.unwrap();
 					println!("{}", n);
 				})
 			})
-			.collect::<Vec<_>>();
-		for handle in handles {
-			handle.join().unwrap();
-		}
+			.collect::<Vec<_>>()
+			.await;
+		join_all(handles)
+			.await
+			.into_iter()
+			.collect::<Result<(), _>>()
+			.unwrap();
 	}
 }
