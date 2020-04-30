@@ -1,6 +1,6 @@
 [package]
 name = "reqwest_resume"
-version = "0.2.1"
+version = "0.3.0"
 license = "MIT OR Apache-2.0"
 authors = ["Alec Mocatta <alec@mocatta.net>"]
 categories = ["development-tools","encoding","rust-patterns","network-programming"]
@@ -12,7 +12,7 @@ It's a thin wrapper around `reqwest`. It's a work in progress – wrapping funct
 """
 repository = "https://github.com/alecmocatta/reqwest_resume"
 homepage = "https://github.com/alecmocatta/reqwest_resume"
-documentation = "https://docs.rs/reqwest_resume/0.2.1"
+documentation = "https://docs.rs/reqwest_resume/0.3.0"
 readme = "README.md"
 edition = "2018"
 
@@ -21,9 +21,12 @@ azure-devops = { project = "alecmocatta/reqwest_resume", pipeline = "tests" }
 maintenance = { status = "passively-maintained" }
 
 [dependencies]
-reqwest = "0.9"
+bytes = "0.5"
+futures = "0.3"
+hyperx = { version = "1.0", features = ["headers"] }
 log = "0.4"
-hyperx = "0.15"
+reqwest = { version = "0.10", features = ["stream"] }
 
 [dev-dependencies]
-flate2 = "1.0"
+async-compression = { git = "https://github.com/Nemo157/async-compression", branch = "multi-member", version = "0.3", features = ["gzip", "futures-bufread"] }
+tokio = { version = "0.2", default-features = false, features = ["macros"] }
