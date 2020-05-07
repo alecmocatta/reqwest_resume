@@ -28,5 +28,5 @@ log = "0.4"
 reqwest = { version = "0.10", features = ["stream"] }
 
 [dev-dependencies]
-async-compression = { git = "https://github.com/Nemo157/async-compression", branch = "multi-member", version = "0.3", features = ["gzip", "futures-bufread"] }
+async-compression = { version = "0.3.3", features = ["gzip", "futures-bufread"] }
 tokio = { version = "0.2", default-features = false, features = ["macros"] }
