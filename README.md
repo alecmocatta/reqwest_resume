@@ -4,7 +4,7 @@
 [![MIT / Apache 2.0 licensed](https://img.shields.io/crates/l/reqwest_resume.svg?maxAge=2592000)](#License)
 [![Build Status](https://dev.azure.com/alecmocatta/reqwest_resume/_apis/build/status/tests?branchName=master)](https://dev.azure.com/alecmocatta/reqwest_resume/_build?definitionId=15)
 
-<a href="https://docs.rs/reqwest_resume/0.3.0">📖 Docs</a> | <a href="https://constellation.zulipchat.com/#narrow/stream/213236-subprojects">💬 Chat</a>
+[📖 Docs](https://docs.rs/reqwest_resume/0.3.1) | [💬 Chat](https://constellation.zulipchat.com/#narrow/stream/213236-subprojects)
 
 Wrapper that uses the `Range` HTTP header to resume get requests.
 
@@ -25,7 +25,7 @@ async fn main() {
     let body = body
         .bytes_stream()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
-    let body = futures::io::BufReader::new(body.into_async_read());
+    let body = BufReader::new(body.into_async_read());
     let mut body = GzipDecoder::new(body); // Content-Encoding isn't set, so decode manually
     body.multiple_members(true);
 
