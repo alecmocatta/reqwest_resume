@@ -21,7 +21,7 @@
 //! let body = body
 //!     .bytes_stream()
 //!     .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
-//! let body = futures::io::BufReader::new(body.into_async_read());
+//! let body = BufReader::new(body.into_async_read());
 //! let mut body = GzipDecoder::new(body); // Content-Encoding isn't set, so decode manually
 //! body.multiple_members(true);
 //!
@@ -32,7 +32,7 @@
 //! # }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/reqwest_resume/0.3.0")]
+#![doc(html_root_url = "https://docs.rs/reqwest_resume/0.3.1")]
 #![warn(
 	missing_copy_implementations,
 	missing_debug_implementations,
