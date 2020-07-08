@@ -24,8 +24,8 @@ maintenance = { status = "passively-maintained" }
 bytes = "0.5"
 futures = "0.3"
 hyperx = { version = "1.0", features = ["headers"] }
-log = "0.4"
 reqwest = { version = "0.10", features = ["stream"] }
+tokio = { version = "0.2", default-features = false }
 
 [dev-dependencies]
 async-compression = { version = "0.3.3", features = ["gzip", "futures-bufread"] }
