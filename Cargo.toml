@@ -1,6 +1,6 @@
 [package]
 name = "reqwest_resume"
-version = "0.3.1"
+version = "0.3.2"
 license = "MIT OR Apache-2.0"
 authors = ["Alec Mocatta <alec@mocatta.net>"]
 categories = ["development-tools","encoding","rust-patterns","network-programming"]
@@ -12,7 +12,7 @@ It's a thin wrapper around `reqwest`. It's a work in progress – wrapping funct
 """
 repository = "https://github.com/alecmocatta/reqwest_resume"
 homepage = "https://github.com/alecmocatta/reqwest_resume"
-documentation = "https://docs.rs/reqwest_resume/0.3.1"
+documentation = "https://docs.rs/reqwest_resume/0.3"
 readme = "README.md"
 edition = "2018"
 
