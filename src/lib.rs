@@ -32,7 +32,7 @@
 //! # }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/reqwest_resume/0.3.1")]
+#![doc(html_root_url = "https://docs.rs/reqwest_resume/0.3.2")]
 #![warn(
 	missing_copy_implementations,
 	missing_debug_implementations,
@@ -51,11 +51,11 @@
 )]
 
 use bytes::Bytes;
-use futures::{ready, Stream, TryFutureExt};
-use log::trace;
+use futures::{ready, FutureExt, Stream, TryFutureExt};
 use std::{
-	future::Future, pin::Pin, task::{Context, Poll}
+	future::Future, pin::Pin, task::{Context, Poll}, time::Duration
 };
+use tokio::time::delay_for as sleep;
 
 /// Extension to [`reqwest::Client`] that provides a method to convert it
 pub trait ClientExt {
@@ -98,11 +98,18 @@ impl RequestBuilder {
 	/// Constructs the Request and sends it the target URL, returning a Response.
 	///
 	/// See [`reqwest::RequestBuilder::send()`].
-	pub fn send(&mut self) -> impl Future<Output = reqwest::Result<Response>> {
+	pub fn send(&mut self) -> impl Future<Output = reqwest::Result<Response>> + Send {
 		let (client, method, url) = (self.0.clone(), self.1.clone(), self.2.clone());
-		let builder = self.0.request(method.clone(), url.clone());
 		async move {
-			let response = builder.send().await?;
+			let response = loop {
+				let builder = client.request(method.clone(), url.clone());
+				match builder.send().await {
+					Err(err) if !err.is_builder() && !err.is_redirect() && !err.is_status() => {
+						sleep(Duration::from_secs(1)).await
+					}
+					x => break x?,
+				}
+			};
 			let headers = hyperx::Headers::from(response.headers());
 			let accept_byte_ranges =
 				if let Some(&hyperx::header::AcceptRanges(ref ranges)) = headers.get() {
@@ -140,7 +147,7 @@ impl Response {
 	/// Convert the response into a `Stream` of `Bytes` from the body.
 	///
 	/// See [`reqwest::Response::bytes_stream()`].
-	pub fn bytes_stream(self) -> impl Stream<Item = reqwest::Result<Bytes>> {
+	pub fn bytes_stream(self) -> impl Stream<Item = reqwest::Result<Bytes>> + Send {
 		Decoder {
 			client: self.client,
 			method: self.method,
@@ -169,10 +176,8 @@ impl Stream for Decoder {
 				Some(Err(err)) => {
 					if !self.accept_byte_ranges {
 						// TODO: we could try, for those servers that don't output Accept-Ranges but work anyway
-						trace!("couldn't resume HTTP request with error {:?}", err);
 						break Poll::Ready(Some(Err(err)));
 					}
-					println!("resuming HTTP request due to error {:?}", err);
 					let builder = self.client.request(self.method.clone(), self.url.clone());
 					let mut headers = hyperx::Headers::new();
 					headers.set(hyperx::header::Range::Bytes(vec![
@@ -182,8 +187,8 @@ impl Stream for Decoder {
 					// https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests
 					// https://github.com/sdroege/gst-plugin-rs/blob/dcb36832329fde0113a41b80ebdb5efd28ead68d/gst-plugin-http/src/httpsrc.rs
 					self.decoder = Box::pin(
-						builder
-							.send()
+						sleep(Duration::from_secs(1))
+							.then(|()| builder.send())
 							.map_ok(reqwest::Response::bytes_stream)
 							.try_flatten_stream(),
 					);
@@ -201,7 +206,7 @@ impl Stream for Decoder {
 /// Shortcut method to quickly make a GET request.
 ///
 /// See [`reqwest::get`].
-pub fn get(url: reqwest::Url) -> impl Future<Output = reqwest::Result<Response>> {
+pub fn get(url: reqwest::Url) -> impl Future<Output = reqwest::Result<Response>> + Send {
 	// <T: IntoUrl>
 	Client::new().get(url).send()
 }
@@ -213,7 +218,6 @@ mod test {
 	use std::io;
 
 	#[tokio::test]
-	#[ignore] // painful on CI. TODO
 	async fn dl_s3() {
 		// Requests to large files on S3 regularly time out or close when made from slower connections. This test is fairly meaningless from fast connections. TODO
 		let body = reqwest::get(
@@ -230,7 +234,7 @@ mod test {
 		let handles = BufReader::new(body)
 			.lines()
 			.map(|url| format!("http://commoncrawl.s3.amazonaws.com/{}", url.unwrap()))
-			.take(10)
+			.take(1) // painful to do more on CI, but unlikely to see errors. TODO
 			.map(|url| {
 				tokio::spawn(async move {
 					println!("{}", url);

@@ -4,7 +4,7 @@
 [![MIT / Apache 2.0 licensed](https://img.shields.io/crates/l/reqwest_resume.svg?maxAge=2592000)](#License)
 [![Build Status](https://dev.azure.com/alecmocatta/reqwest_resume/_apis/build/status/tests?branchName=master)](https://dev.azure.com/alecmocatta/reqwest_resume/_build?definitionId=15)
 
-[📖 Docs](https://docs.rs/reqwest_resume/0.3.1) | [💬 Chat](https://constellation.zulipchat.com/#narrow/stream/213236-subprojects)
+[📖 Docs](https://docs.rs/reqwest_resume) | [💬 Chat](https://constellation.zulipchat.com/#narrow/stream/213236-subprojects)
 
 Wrapper that uses the `Range` HTTP header to resume get requests.
 
