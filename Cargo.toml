@@ -17,7 +17,7 @@ readme = "README.md"
 edition = "2018"
 
 [badges]
-azure-devops = { project = "alecmocatta/reqwest_resume", pipeline = "tests" }
+azure-devops = { project = "alecmocatta/reqwest_resume", pipeline = "tests", build = "15" }
 maintenance = { status = "passively-maintained" }
 
 [dependencies]

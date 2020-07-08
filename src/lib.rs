@@ -218,7 +218,6 @@ mod test {
 	use std::io;
 
 	#[tokio::test]
-	#[ignore] // painful on CI. TODO
 	async fn dl_s3() {
 		// Requests to large files on S3 regularly time out or close when made from slower connections. This test is fairly meaningless from fast connections. TODO
 		let body = reqwest::get(
@@ -235,7 +234,7 @@ mod test {
 		let handles = BufReader::new(body)
 			.lines()
 			.map(|url| format!("http://commoncrawl.s3.amazonaws.com/{}", url.unwrap()))
-			.take(10)
+			.take(1) // painful to do more on CI, but unlikely to see errors. TODO
 			.map(|url| {
 				tokio::spawn(async move {
 					println!("{}", url);
